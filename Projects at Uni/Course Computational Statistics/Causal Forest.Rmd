@@ -1,0 +1,365 @@
+---
+title: "CCC"
+author: "Lindi Li (3460570)"
+date: "8/21/2022"
+output: html_document
+   
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 1. Introduction
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+
+## 2. Confounders and Causal Forest
+
+### 2.1 Estimating Causal Effect
+
+Suppose that we want to estimate the effect of smoking on respiratory diseases. It is easy to demonstrate that smoking habits have an negative impact on his/her health condition. However, correlation does not imply causation. The fact that makes causal inference troublesome is that one can never observe a causal effect in reality. For a simplified example, a person is suffering from pneumonia and has been smoking for 20 years. We could demonstrate that his disease is associated with his smoking habit, but we could never be sure that this person won't get pneumonia if he doesn't smoke. Because it is impossible to observe both situations happen to one individual simultaneously.
+
+To put this more intuitively, we set:
+
+$$
+Y(1):Outcome-with-treatment
+$$
+$$
+Y(0):Outcome-without-treatment
+$$
+$$
+\tau:treatment-effect
+$$
+$$
+\tau=E[Y(1)]-E[Y(0)]
+$$
+There are two potential outcomes for each observation, Y(1) and Y(0), and only one outcome is observed. The outcome Y(1) is in the situation where everyone in the entire population receives the treatment, while the outcome Y(0) refers to a situation where none individuals in the entire population are assigned the treatment. What we want to determine is the difference between two outcomes--the treatment effect $\tau$. This is a typical missing data problem, which makes it surprisingly difficult to show the expected difference between two potential outcomes quantitatively and intuitively.
+
+### 2.2 Confounding Variables
+
+Before explaining how to estimate $\tau$, it is necessary ro introduce the concept of confounding. In order to make the data setting ideal, the key to estimating causal effects is to conduct randomized experiments. Randomness refers to random assignment of treatment between two groups--control group and treatment group. The only difference that could be observed is supposed to be caused by the treatment itself.
+
+Unfortunately, in the real world and in observational study, there are highly likely some other differences between the treated group and control group, in the case (smoking and respiratory disease) such as gender, age, weight and so on. The existence of such differences is very problematic because we cannot be sure that causality comes from the treatment solely rather than other variables that differ in two groups. For instance, in this case, there are two groups--smokers and non-smokers. The probability of suffering from respiratory diseases might noy solely depend on the treatment (smoking). Older people tend to smoke more often and are more likely to be in poor health. Hence there is a high chance that older smokers are prone to respiratory disease than non-smokers and younger smokers.
+
+```{r pressure, echo=FALSE, fig.cap="Confounder X", out.width='50%'}
+knitr::include_graphics("confounder.png")
+```
+This type of variable X, that differs between the treated group and control group other than the treatment T, and has an association with the outcome Y, are called confounding variables.
+
+### 2.3 Essential Assumption
+
+Remember the true $\tau$ is:
+$$
+\tau=E[Y(1)]-E[Y(0)]
+$$
+
+$\hat{\tau}$ is the estimated value of average causal effect. 
+$$
+\hat{\tau}=\hat{E}[Y|T=1]-\hat{E}[Y|T=0]
+$$
+As we already discussed in section 2.1, the main problem in data setting is a missing counterfactual as only one outcome is observable. Note that, E[Y(1)] represents the mean of all values in a given population when every individual is assigned a treatment. While E[Y|T=1] means a sample average in a given population for individuals who actually receive treatment.
+
+$\hat{\tau}$ is only unbiased to $\tau$ when the following assumptions are satisfied:
+
+* Conditional Independence (or Conditional Unconfoundedness):
+   * $(Y^1_i,Y^0_i)$$\perp\!\!\!\perp$$T_i|X_i$
+   * This is a very essential assumption. It guarantees that the assignment of treatment only depends on covariates $X$, and the treated and untreated individuals can be exchanged. 
+* Counterfactual Consistency
+   * $Y_i=Y^0_i+T_i(Y^1_i-Y^0_i)$
+   * The treatment is defined unambiguously, which ensures that every individual receives stable unit treatment value.
+* Positivity
+This assumption simply means that, it is always possible that every individual can receive every level of treatment. Vice versa for the control group.
+
+The good news is that it is possible to deal with confounders. There are several methods to deal with measured confounding variables, such as standardization, stratification, weighting, inverse-probability and so on. However, for unmeasured confounders, it is impossible to estimate treatment effect accurately.
+
+### 2.4 Causal Forest
+
+Causal forest is an extension of random forest, a method from Generalized Random Forest (Athey et al., 2019). The logic of Random Forest is pretty similar to Causal Forest. In a Random Forest, bootstrapped datasets are created repeatedly and randomly the same size as the original dataset. Then each subset in the bootstrapped dataset is used to generate a number of decision trees. 
+
+The aim of a random forest is to minimize prediction error of $Y$:$MSE=\frac{1}{n}\sum_{i=1}^{n}{(\bar{Y}-Y_i)^2}$
+
+Causal forests are built based on causal trees and with a different goal--data is split into different partitions in order to maximizing the heterogeneity of treatment effects among the sample.
+
+Under the assumptions in section 2.3, now we estimate the conditional average treatment effect $\tau(x)=E[Y^1_i-Y^0_i|X_i=x]$
+
+Let's begin with a single causal tree. Suppose that the CATE $\tau(x)$ is constant over a neighborhood $N(x)$, then using the residual-on-residual approach makes it possible to solve a partially linear model over N(x) to estimate the average treatment effect (Jacob,2021). For every sample $S$, we have two subsamples $S_{treat}$, $S_{control}$ and three observations $(Y^{obs}_i,X_i,T_i)$. In a tree $\prod$, for all x and treatment levels $t$:
+
+* the population average outcome is given by $\mu(t,x;\prod)=E[Y_i(t)|X_i\in(x;\prod)$
+* the average causal effect is $\tau(x;\prod)=E[Y^1_i-Y^0_i|X_i\in(x;\prod)]=\mu(1,x;\prod)-\mu(0,x;\prod)$
+* the estimated average causal effect is
+$\hat{\tau}(x;S,\prod)=\hat{\mu}(1,x;S,\prod)-\hat{\mu}(0,x;S,\prod)$
+
+A causal forest is simply the average of a large number of causal trees, where the trees differ due to subsampling (Athey & Imbens, 2019). CATE $\tau(x)$ is determined by a local generalized method of moments model which is solved by a weighting function. If there is overfitting problem, honest causal tree is very helpful to search for true heterogeneity, not noise that are idiosyncratic to the sample. When a tree is honest, it means that for each training sample $S_i$, it will only be used to choose partition or to estimate with-in leaf treatment effect, but not both (Jacob, 2021). 
+
+
+## 3. Simulation Study
+
+### 3.1 Data Generating Process
+
+The DGP function was inspired by a blog *'No, you have not controlled for confounders'* posted by David Lindelöf on February 10, 2021. In this section, the comparison of the performance of causal forest and traditional regressor in the presence of confounders will be discussed.
+
+There will be four different scenarios and the basic setup of the data generating process is listed as follows:
+$$
+X_{i,1},...X_{i,10}\sim N(0,1)
+$$
+
+$$
+W_i\sim B(N,1,p)
+$$
+$$
+E_i: main-effects
+$$
+
+$$
+\epsilon_i\sim N(0,1)
+$$
+
+
+$$
+Y_i=\tau_i*W_i+E_i+\epsilon_i
+$$
+In this data setting, $X$ is a matrix of random covariates; $W$ is a random treatment binary indicator, which may or may not depend on $X$; $E$ is the main effects that depend $X$; $Y$ is the outcome variable. 
+
+* Case 1: There is no confounder variables and the main effect $E$ is trivial.
+
+$$
+W_i\sim B(N,1,p=0.5)
+$$
+
+$$
+E_i=X_{i,2}+min(X_{i,3},0)
+$$
+* Case 2: There is confounder variables and the main effect $E$ is trivial.
+
+$$
+W_i\sim B(N,1,p=0.4+0.2*X_{i,1}>0)
+$$
+
+$$
+E_i=X_{i,2}+min(X_{i,3},0)
+$$
+* Case 3: There is no confounder variables and the main effect $E$ is complex.
+
+$$
+W_i\sim B(N,1,p=0.5)
+$$
+
+$$
+E_i=max(X_{i,1}+X_{i,2},X_{i,3},0)+min(X_{i,4}+X_{i,5},0)
+$$
+* Case 4: There is confounder variables and the main effect $E$ is complex.
+
+$$
+W_i\sim B(N,1,p=0.4+0.2*X_{i,1}>0)
+$$
+
+$$
+E_i=max(X_{i,1}+X_{i,2},X_{i,3},0)+min(X_{i,4}+X_{i,5},0)
+$$
+In spite of the truth that in real world, one can never observe counterfactuals, we can calculate the true treatment effect for each observation in simulation studies. $\tau$ is defined as heterogeneous treatment effect:
+$$
+\tau=max(X_{i,1},0)
+$$
+
+```{r}
+library(grf)
+library(ranger)
+set.seed(776)
+dgp<-function(N,p,case){
+  
+  X <- matrix(rnorm(N * p),nrow = N,ncol = p)
+  tau.true <- pmax(X[, 1], 0)
+  
+  if(case=="case 1"){
+    W <- rbinom(N,1, p = 0.5)
+    E <- X[, 2] + pmin(X[, 3], 0)
+  }
+  
+  if(case=="case 2"){
+    W<-rbinom(N,1,0.4+0.2*(X[,1]>0))
+    E <- X[, 2] + pmin(X[, 3], 0)
+  }
+  
+  if(case=="case 3"){
+    W<-rbinom(N,1,0.5)
+    E <- pmax(X[,1]+X[,2],X[,3],0)+pmax(X[,4]+X[,5],0)
+  }
+  
+  if(case=="case 4"){
+    W<-rbinom(N,1,0.4+0.2*(X[,1]>0))
+    E <- pmax(X[,1]+X[,2],X[,3],0)+pmax(X[,4]+X[,5],0)
+  }
+  
+  Y <- tau.true * W + E + rnorm(N)
+  df<-data.frame(Y,W,tau.true,X)
+  
+  return(df)
+}
+
+```
+
+Therefore, the conditional average treatment effect will be estimated by causal forest and traditional regressor, and we will compare the estimators with corresponding true values.
+
+### 3.2 Comparison of true average treatment effect and estimated CATE
+```{r}
+CATE<-function(df){
+  t<-df$t
+  X<-df[,4:13]
+  Y<-df$Y
+  W<-df$W
+  #Empirical CATE
+  Emp.CATE<-mean(t)
+  #causal forest CATE
+  c.forest <- causal_forest(X, Y, W)
+  cf.CATE<-average_treatment_effect(c.forest, target.sample = 'all')
+  cf.CATE<-data.frame(cf.CATE)
+  cf.CATE<-cf.CATE[1,]
+  #random forest CATE
+  ranger.model <- ranger(Y ~ ., data = data.frame(X, W, Y))
+  ranger.cate <- function(ranger.model, X) {
+    data_untreated <- data.frame(X, W = 0)
+    data_treated <- data.frame(X, W = 1)
+    mean(predict(ranger.model, data_treated)$predictions - predict(ranger.model, data_untreated)$predictions)
+  }
+  rf.CATE<-ranger.cate(ranger.model, X)
+  
+  CATE.tab<-rbind(Emp.CATE,cf.CATE,rf.CATE)
+  
+  return(CATE.tab)
+}
+```
+
+```{r}
+simu.CATE<-function(p,num.simu,case){
+  CATE.table<-matrix(NA,nrow=3,ncol=5,byrow = FALSE)
+  rownames(CATE.table)<-c("Empirical Tau","Causal Forest","Traditional Regressor")
+  colnames(CATE.table)<-c("numob=100","numob=500","numob=1000","numob=5000","numob=10000")
+  
+  j<-0
+  for (num.ob in c(100,500,1000,5000,10000)) {
+    j<-j+1
+    CATE.rep<-matrix(NA,nrow=3,ncol=num.simu)
+    for (i in 1:num.simu) {
+      data.case<-dgp(N=num.ob,p,case)
+      CATE.rep[,i]<-CATE(data.case)
+    }
+    CATE.table[1,j]<-mean(CATE.rep[1,])
+    CATE.table[2,j]<-mean(CATE.rep[2,])
+    CATE.table[3,j]<-mean(CATE.rep[3,])
+  }
+  return(CATE.table)
+}
+```
+
+* Case 1: There is no confounder variables and the main effect $E$ is trivial.
+```{r}
+simu.CATE(10,100,case="case 1")
+```
+In this scenario, we could observe that
+```{r}
+simu.CATE(10,100,case="case 2")
+```
+
+```{r}
+simu.CATE(10,100,case="case 3")
+```
+
+```{r}
+simu.CATE(10,100,case="case 4")
+```
+
+
+
+### 3.3 tau
+```{r}
+cf.selection<-function(df){
+  Y<-df$Y
+  W<-df$W
+  X<-df[,4:13]
+  cf.untrained<-causal_forest(X,Y,W)
+  important.var<-variable_importance(cf.untrained)
+  select.index<-which(important.var>=median(important.var))
+  X.select<-X[,select.index]
+  cf.trained<-causal_forest(X.select,Y,W)
+  tau.hat<-predict(cf.trained)$predictions
+  df$tau.hat<-tau.hat
+  
+  return(df)
+}
+```
+
+
+```{r}
+simu.MSE<-function(p,num.simu){
+  
+  MSE.tau.hat<-matrix(NA,nrow=4,ncol=5)
+  rownames(MSE.tau.hat)<-c("case 1","case 2","case 3","case 4")
+  colnames(MSE.tau.hat)<-c("numob=100","numob=500","numob=1000","numob=5000","numob=10000")
+  
+  #case 1
+  j<-0
+  for (num.ob in c(100,500,1000,5000,10000)) {
+    j<-j+1
+    MSE<-c()
+    for (i in 1:num.simu) {
+      data.case<-dgp(N=num.ob,p,case="case 1")
+      data.case<-cf.selection(data.case)
+      MSE[i]<-mean((data.case$tau.true-data.case$tau.hat)^2)
+    }
+    MSE.tau.hat[1,j]<-mean(MSE)
+  }
+  
+  #case 2
+  j<-0
+  for (num.ob in c(100,500,1000,5000,10000)) {
+    j<-j+1
+    MSE<-c()
+    for (i in 1:num.simu) {
+      data.case<-dgp(N=num.ob,p,case="case 2")
+      data.case<-cf.selection(data.case)
+      MSE[i]<-mean((data.case$tau.true-data.case$tau.hat)^2)
+    }
+    MSE.tau.hat[2,j]<-mean(MSE)
+  }
+  
+  #case 3
+  j<-0
+  for (num.ob in c(100,500,1000,5000,10000)) {
+    j<-j+1
+    MSE<-c()
+    for (i in 1:num.simu) {
+      data.case<-dgp(N=num.ob,p,case="case 3")
+      data.case<-cf.selection(data.case)
+      MSE[i]<-mean((data.case$tau.true-data.case$tau.hat)^2)
+    }
+    MSE.tau.hat[3,j]<-mean(MSE)
+  }
+  
+  #case 4
+  j<-0
+  for (num.ob in c(100,500,1000,5000,10000)) {
+    j<-j+1
+    MSE<-c()
+    for (i in 1:num.simu) {
+      data.case<-dgp(N=num.ob,p,case="case 4")
+      data.case<-cf.selection(data.case)
+      MSE[i]<-mean((data.case$tau.true-data.case$tau.hat)^2)
+    }
+    MSE.tau.hat[4,j]<-mean(MSE)
+  }
+  
+  return(MSE.tau.hat)
+}
+```
+
+```{r}
+simu.MSE(10,100)
+```
+
+
+
+
+
